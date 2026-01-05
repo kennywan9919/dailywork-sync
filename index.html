@@ -12,11 +12,12 @@
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body class="bg-white text-gray-900 antialiased">
 
     <div class="flex h-screen overflow-hidden">
-        <div class="absolute top-4 right-8 z-10 flex items-center bg-white/80 backdrop-blur-md px-4 py-2 rounded-full border border-gray-100 shadow-sm">
+        <div class="absolute top-20 right-4 z-10 flex items-center bg-white/80 backdrop-blur-md px-4 py-2 rounded-full border border-gray-100 shadow-sm">
     <span class="text-xs text-gray-400 mr-2 uppercase tracking-widest">Date</span>
     <input type="date" id="datePicker" 
         class="text-sm font-medium text-gray-700 bg-transparent focus:outline-none cursor-pointer">
@@ -47,22 +48,44 @@
             <input type="file" id="importInput" class="hidden" accept=".json">
         </label>
     </div>
-</div>
+    </div>
         </aside>
 
-        <main class="w-[70%] flex flex-col h-full">
-            <div class="p-8 flex flex-col h-full">
-                <div class="flex justify-between items-center mb-8">
-                    <h2 class="text-sm font-medium tracking-widest uppercase text-gray-400">Meeting Minutes</h2>
-                    <span id="saveStatus" class="text-[10px] text-gray-300 italic uppercase">Auto-saving...</span>
-                </div>
-                
-                <textarea id="meetingNotes" 
-                    class="flex-1 w-full resize-none bg-transparent text-lg leading-relaxed text-gray-700 focus:outline-none placeholder-gray-200" 
-                    placeholder="在此开始记录..."
-                ></textarea>
+        <main class="w-[70%] flex flex-col h-full relative">
+    <div class="p-8 flex flex-col h-full">
+        <div class="flex justify-between items-center mb-8">
+            <h2 class="text-sm font-medium tracking-widest uppercase text-gray-400">Meeting Minutes</h2>
+            <div class="flex items-center gap-4">
+                <button onclick="togglePreview()" id="previewBtn" class="text-[10px] border border-gray-200 px-3 py-1 rounded-full hover:bg-gray-50 transition-all uppercase tracking-widest">Preview</button>
+                <span id="saveStatus" class="text-[10px] text-gray-300 italic uppercase">Auto-saving...</span>
+                <button onclick="askGemini()" class="text-[10px] bg-black text-white px-3 py-1 rounded-full hover:bg-gray-800 transition-all uppercase tracking-widest">AI Summary</button>
             </div>
-        </main>
+            
+        </div>
+
+        <textarea id="meetingNotes" 
+            class="flex-1 w-full resize-none bg-transparent text-lg leading-relaxed text-gray-700 focus:outline-none placeholder-gray-200" 
+            placeholder="在此开始记录..."></textarea>
+            
+        <div id="markdownPreview" 
+            class="hidden flex-1 w-full overflow-y-auto prose prose-sm prose-slate max-w-none text-gray-700">
+        </div>
+
+        <div id="aiModal" class="hidden fixed inset-0 bg-black/20 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-white w-full max-w-2xl rounded-2xl shadow-2xl p-8 max-h-[80vh] overflow-y-auto">
+        <div class="flex justify-between items-center mb-6">
+            <h3 class="text-sm font-bold uppercase tracking-widest">AI Analysis</h3>
+            <button onclick="closeModal()" class="text-gray-400 hover:text-black">✕</button>
+        </div>
+        <div id="aiContent" class="text-sm leading-relaxed text-gray-600 prose">
+            正在思考中...
+        </div>
+    </div>
+</div>
+        
+    </div>
+    
+</main>
 
     </div>
     <script>
@@ -226,7 +249,7 @@ window.addEventListener('DOMContentLoaded', () => {
     datePicker.value = today;
     loadDataByDate();
 });
-        // --- 数据备份与还原功能 ---
+  // --- 数据备份与还原功能 ---
 
 // 1. 导出函数：打包所有以 "min_" 开头的本地数据
 const exportData = () => {
@@ -279,7 +302,99 @@ document.getElementById('importInput').addEventListener('change', (e) => {
     };
     reader.readAsText(file);
 });
+const askGemini = async () => {
+    // 1. 获取或要求输入 API Key
+    let apiKey = localStorage.getItem('gemini_api_key');
+    if (!apiKey) {
+        apiKey = prompt("请输入您的 Gemini API Key (仅保存在本地浏览器):");
+        if (apiKey) localStorage.setItem('gemini_api_key', apiKey);
+        else return;
+    }
+
+    // 2. 显示弹窗
+    const modal = document.getElementById('aiModal');
+    const content = document.getElementById('aiContent');
+    modal.classList.remove('hidden');
+    content.innerText = "正在调动 AI 进行深度分析...";
+
+    // 3. 构建深度提示词 (整合了你刚才的精妙逻辑)
+    const promptText = `
+        你是一位专业的高级秘书和项目管理专家。
+        请根据以下日期、待办事项和会议笔记进行综合分析。
+        
+        日期：${datePicker.value}
+        当前待办：${JSON.stringify(state.tasks)}
+        会议笔记：${state.notes}
+        
+        请输出以下格式：
+        ### 📌 核心摘要
+        (简要说明会议重点)
+        
+        ### ⚡ 潜在风险
+        (请识别笔记中任何隐含的资源冲突、截止日期压力或未明确的责任归属)
+        
+        ### 💡 改进建议
+        (基于当前任务和笔记，给出下一步的行动建议)
+    `;
+
+    // 4. 调用 Gemini API
+    try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: promptText }] }]
+            })
+        });
+
+        const data = await response.json();
+        const aiResponse = data.candidates[0].content.parts[0].text;
+        
+        // 渲染结果 (这里简单处理，实际可用 markdown 解析库)
+        content.innerText = aiResponse;
+    } catch (error) {
+        content.innerText = "调用失败，请检查 API Key 或网络状况。";
+    }
+};
+
+const closeModal = () => {
+    document.getElementById('aiModal').classList.add('hidden');
+};
+let isPreview = false;
+
+const togglePreview = () => {
+    const textarea = document.getElementById('meetingNotes');
+    const previewDiv = document.getElementById('markdownPreview');
+    const btn = document.getElementById('previewBtn');
+
+    isPreview = !isPreview;
+
+    if (isPreview) {
+        // 将 Markdown 转换为 HTML 并显示
+        previewDiv.innerHTML = marked.parse(textarea.value);
+        textarea.classList.add('hidden');
+        previewDiv.classList.remove('hidden');
+        btn.innerText = "Edit";
+        btn.classList.add('bg-gray-100');
+    } else {
+        textarea.classList.remove('hidden');
+        previewDiv.classList.add('hidden');
+        btn.innerText = "Preview";
+        btn.classList.remove('bg-gray-100');
+    }
+};
+
+// 样式微调：为了让 Markdown 渲染好看，我们需要一点 CSS
+const markdownStyle = document.createElement('style');
+markdownStyle.innerHTML = `
+    #markdownPreview h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 1rem; }
+    #markdownPreview h2 { font-size: 1.25rem; font-weight: 600; margin-top: 1.5rem; margin-bottom: 0.75rem; }
+    #markdownPreview ul { list-style-type: disc; padding-left: 1.5rem; margin-bottom: 1rem; }
+    #markdownPreview p { margin-bottom: 1rem; line-height: 1.8; }
+    #markdownPreview code { background: #f3f4f6; padding: 0.2rem 0.4rem; rounded: 0.25rem; font-size: 0.875em; }
+    #markdownPreview blockquote { border-left: 4px solid #e5e7eb; padding-left: 1rem; italic; color: #6b7280; }
+`;
+document.head.appendChild(markdownStyle);
     </script>     
 </body>
-
 </html>
