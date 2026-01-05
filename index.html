@@ -39,6 +39,15 @@
                     </li>
                 </ul>
             </div>
+            <div class="mt-auto p-8 border-t border-gray-100">
+    <div class="flex items-center justify-between text-[10px] tracking-widest uppercase text-gray-400">
+        <button onclick="exportData()" class="hover:text-gray-900 transition-colors">Export JSON</button>
+        <label class="cursor-pointer hover:text-gray-900 transition-colors">
+            Import JSON
+            <input type="file" id="importInput" class="hidden" accept=".json">
+        </label>
+    </div>
+</div>
         </aside>
 
         <main class="w-[70%] flex flex-col h-full">
@@ -217,6 +226,60 @@ window.addEventListener('DOMContentLoaded', () => {
     datePicker.value = today;
     loadDataByDate();
 });
+        // --- 数据备份与还原功能 ---
+
+// 1. 导出函数：打包所有以 "min_" 开头的本地数据
+const exportData = () => {
+    const backupData = {};
+    // 遍历所有数据，只抓取我们应用产生的 key
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key.startsWith('min_')) {
+            backupData[key] = localStorage.getItem(key);
+        }
+    }
+
+    const dataStr = JSON.stringify(backupData, null, 2);
+    const blob = new Blob([dataStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    
+    // 创建虚拟链接并触发下载
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `sync_backup_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+};
+
+// 2. 导入函数：读取 JSON 并存入 LocalStorage
+document.getElementById('importInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        try {
+            const importedData = JSON.parse(event.target.result);
+            
+            // 确认覆盖提示
+            if (confirm("导入将合并数据，是否继续？")) {
+                Object.keys(importedData).forEach(key => {
+                    if (key.startsWith('min_')) {
+                        localStorage.setItem(key, importedData[key]);
+                    }
+                });
+                alert("导入成功！页面即将刷新。");
+                location.reload(); // 刷新以加载新数据
+            }
+        } catch (err) {
+            alert("文件格式错误，请确保是有效的 JSON 文件。");
+        }
+    };
+    reader.readAsText(file);
+});
     </script>     
 </body>
+
 </html>
